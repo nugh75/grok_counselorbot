@@ -1,10 +1,12 @@
 from flask import Flask, render_template, request, jsonify, session
 import ollama
-import json
 import logging
 import datetime
 import os
 import requests
+import json
+import re
+import traceback
 from flask_session import Session  # Per session server-side
 from dotenv import load_dotenv
 
@@ -60,6 +62,7 @@ OPENROUTER_FREE_MODELS = [
     'undi95/toppy-m-7b:free',
     'openrouter/cinematika-7b:free',
     'google/gemma-7b-it:free',
+    'deepseek/deepseek-chat-v3-0324:free',
     'meta-llama/llama-3-8b-instruct:free'
 ]
 
@@ -76,6 +79,7 @@ TOOL_COMPATIBLE_MODELS = [
     # Modelli OpenRouter compatibili
     'microsoft/phi-3-medium-128k-instruct:free',
     'mistralai/mistral-7b-instruct:free',
+    'deepseek/deepseek-chat-v3-0324:free',
     'meta-llama/llama-3-8b-instruct:free'
 ]
 
@@ -108,6 +112,31 @@ Procedura operativa
     Analisi di secondo livello (se richiesta)
         Riorganizzare i dati secondo i raggruppamenti tematici e analizzarli in modo trasversale con il tool sl-qsa.
         Evidenziare connessioni, punti di forza e criticità emergenti.
+importStai interagendo con un utente che ha appena completato il "Questionario Strategie di Apprendimento" (QSA) sul sito competenzestrategiche.it. Il QSA è un questionario di self-assessment, ovvero di autovalutazione, che aiuta l'utente a riflettere sulle proprie abitudini e strategie nello studio. L'utente cerca feedback e approfondimenti sui propri risultati. Hai accesso a informazioni generali sulle strategie di apprendimento, ma non puoi accedere direttamente ai risultati specifici dell'utente. Presumi che l'utente sia un adulto interessato al miglioramento personale.
+
+Sistema di Punteggi QSA
+
+IMPORTANTE: I punteggi del QSA vanno da 1 a 9 e sono categorizzati con un sistema di colori che indica il livello di performance:
+
+- ARANCIONE (1-3): Punteggi bassi che indicano aree critiche che necessitano di miglioramento
+- GIALLO (4-5): Punteggi medi che indicano competenze sufficienti ma migliorabili  
+- VERDE (6-9): Punteggi alti che indicano punti di forza e competenze ben sviluppate
+
+ATTENZIONE - Fattori con Valori Invertiti:
+Alcuni fattori hanno interpretazione INVERSA dei colori, dove punteggi ALTI indicano problematiche:
+- C3 (Disorientamento): punteggi alti = maggiori difficoltà
+- C6 (Difficoltà di concentrazione): punteggi alti = maggiori problemi di concentrazione  
+- A1 (Ansietà di base): punteggi alti = maggiore ansia problematica
+- A4 (Attribuzione a cause incontrollabili): punteggi alti = maggiore tendenza a vedere i risultati come fuori dal proprio controllo
+- A5 (Mancanza di perseveranza): punteggi alti = maggiore difficoltà a perseverare
+- A7 (Interferenze emotive): punteggi alti = maggiore interferenza emotiva
+
+Per questi fattori invertiti:
+- VERDE (1-3): Livello ottimale (bassa problematicità)
+- GIALLO (4-5): Livello medio (problematicità moderata)
+- ARANCIONE (6-9): Livello critico (alta problematicità)
+
+Quando analizzi i punteggi, tieni sempre conto di questa distinzione per fornire interpretazioni accurate e contestualizzate.json
 
 Regole
 
@@ -593,7 +622,8 @@ def generate_response(user_message, model):
                 }
             }
         else:
-            response = client.chat(model=model, messages=messages, tools=tools)
+            # Per Ollama, non usiamo tools nella chiamata diretta ma implementiamo fallback manuale
+            response = client.chat(model=model, messages=messages)
         
         logger.info(f"✅ Prima risposta ricevuta")
         
@@ -647,8 +677,6 @@ def generate_response(user_message, model):
             logger.info(f"🔧 Rilevati tool calls nel testo, processamento manuale...")
             try:
                 # Estrai il JSON dei tool calls dal testo con pattern più flessibili
-                import re
-                import json
                 
                 # Prova diversi pattern per estrarre i tool calls
                 patterns = [
@@ -727,7 +755,6 @@ def generate_response(user_message, model):
     except Exception as e:
         logger.error(f"💥 ERRORE CRITICO durante la chiamata a Ollama: {str(e)}")
         logger.error(f"🔍 Tipo errore: {type(e).__name__}")
-        import traceback
         logger.error(f"📍 Stack trace: {traceback.format_exc()}")
         return f"Errore durante la comunicazione con Ollama: {str(e)}"
 
@@ -761,7 +788,6 @@ def send():
             
     except Exception as e:
         logger.error(f"💥 ERRORE nella route /send: {str(e)}")
-        import traceback
         logger.error(f"📍 Stack trace: {traceback.format_exc()}")
         return jsonify({'error': f'Errore del server: {str(e)}'})
 
